@@ -66,6 +66,42 @@ CodexSaver 返回的不是一段静默 JSON。
 
 ---
 
+## V2：有边界的 Work Packet
+
+CodexSaver v2 新增了一条更严格的委派路径：bounded work packet。它不再只是把任务
+丢给 worker，而是把任务压成一个可验证的小工作包：
+
+- 明确目标
+- 允许修改的文件或 glob
+- 禁止路径
+- 验收标准
+- 允许执行的检查命令
+- 最大迭代次数和 diff 行数
+
+Worker 可以产出 patch，但 CodexSaver 只会在临时沙箱中 apply。只有 patch 没越界、
+检查命令通过，结果才会被接受。如果任务本身已经满足，v2 会返回
+`preflight_satisfied=true`，不再浪费一次 worker 模型调用。
+
+CLI 示例：
+
+```bash
+codexsaver work-packet \
+  "Create docs/v2-smoke.md with one sentence." \
+  --files README.md \
+  --allowed-file docs/v2-smoke.md \
+  --acceptance "docs/v2-smoke.md exists in sandbox" \
+  --allowed-command "python -c \"from pathlib import Path; assert Path('docs/v2-smoke.md').exists()\"" \
+  --workspace .
+```
+
+MCP 工具：
+
+```text
+codexsaver.delegate_work_packet
+```
+
+---
+
 ## 快速开始
 
 ### 推荐：全局安装
@@ -74,12 +110,13 @@ CodexSaver 返回的不是一段静默 JSON。
 git clone https://github.com/fendouai/CodexSaver
 cd CodexSaver
 
-python cli.py auth set --provider deepseek --api-key YOUR_API_KEY
-python cli.py install
-python cli.py doctor
+python -m pip install -e .
+codexsaver auth set --provider deepseek --api-key YOUR_API_KEY
+codexsaver install
+codexsaver doctor --workspace .
 ```
 
-这就够了。`python cli.py install` 会把 CodexSaver 写入全局 Codex MCP 配置
+这就够了。`codexsaver install` 会把 CodexSaver 写入全局 Codex MCP 配置
 `~/.codex/config.toml`，并指向一个稳定启动入口：
 `~/.codexsaver/codexsaver_mcp.py`。
 
@@ -92,7 +129,7 @@ codexsaver.delegate_task
 只有当你想写入当前仓库自己的 `.codex/config.toml` 时，才需要使用：
 
 ```bash
-python cli.py install --project
+codexsaver install --project
 ```
 
 ### Provider 配置
@@ -101,23 +138,23 @@ DeepSeek 是默认 provider，因为价格低，并且提供 OpenAI-compatible A
 切换 provider 只需要改一个参数：
 
 ```bash
-python cli.py auth set --provider openai --api-key YOUR_API_KEY --model gpt-4o-mini
-python cli.py auth set --provider anthropic --api-key YOUR_API_KEY --model claude-3-5-haiku-latest
-python cli.py auth set --provider gemini --api-key YOUR_API_KEY --model gemini-2.0-flash
-python cli.py auth set --provider qwen --api-key YOUR_API_KEY --model qwen-plus
+codexsaver auth set --provider openai --api-key YOUR_API_KEY --model gpt-4o-mini
+codexsaver auth set --provider anthropic --api-key YOUR_API_KEY --model claude-3-5-haiku-latest
+codexsaver auth set --provider gemini --api-key YOUR_API_KEY --model gemini-2.0-flash
+codexsaver auth set --provider qwen --api-key YOUR_API_KEY --model qwen-plus
 ```
 
 本地模型：
 
 ```bash
-python cli.py auth set --provider ollama --model llama3.1
-python cli.py auth set --provider lmstudio --model local-model
+codexsaver auth set --provider ollama --model llama3.1
+codexsaver auth set --provider lmstudio --model local-model
 ```
 
 任意自定义 OpenAI-compatible endpoint：
 
 ```bash
-python cli.py auth set \
+codexsaver auth set \
   --provider custom \
   --api-key YOUR_API_KEY \
   --base-url https://example.com/v1/chat/completions \
@@ -127,7 +164,7 @@ python cli.py auth set \
 查看内置 provider：
 
 ```bash
-python cli.py auth providers
+codexsaver auth providers
 ```
 
 如果你不想保存 key，而是只在当前 shell 会话里临时使用：
@@ -135,8 +172,8 @@ python cli.py auth providers
 ```bash
 export CODEXSAVER_PROVIDER=deepseek
 export CODEXSAVER_API_KEY=YOUR_API_KEY
-python cli.py install
-python cli.py doctor
+codexsaver install
+codexsaver doctor --workspace .
 ```
 
 ### 一句话让 Codex 安装
@@ -144,13 +181,13 @@ python cli.py doctor
 如果 Codex 已经打开了这个仓库，你可以直接发：
 
 ```text
-帮我为 CodexSaver 保存 worker provider API key，运行 `python cli.py auth set --provider deepseek --api-key ...`，然后运行 `python cli.py install` 和 `python cli.py doctor`，告诉我是否已经就绪。
+帮我为 CodexSaver 保存 worker provider API key，运行 `codexsaver auth set --provider deepseek --api-key ...`，然后运行 `codexsaver install` 和 `codexsaver doctor --workspace .`，告诉我是否已经就绪。
 ```
 
 如果你只想做项目级安装：
 
 ```text
-帮我为 CodexSaver 保存 worker provider API key，并只把 CodexSaver 安装到当前仓库，运行 `python cli.py auth set --provider deepseek --api-key ...`、`python cli.py install --project`，然后运行 `python cli.py doctor` 并总结结果。
+帮我为 CodexSaver 保存 worker provider API key，并只把 CodexSaver 安装到当前仓库，运行 `codexsaver auth set --provider deepseek --api-key ...`、`codexsaver install --project`，然后运行 `codexsaver doctor --workspace .` 并总结结果。
 ```
 
 这里的“就绪”指的是：
@@ -158,13 +195,13 @@ python cli.py doctor
 - `~/.codex/config.toml` 包含全局 `codexsaver` MCP server，或仓库里存在 `.codex/config.toml`
 - 全局安装时存在 `~/.codexsaver/codexsaver_mcp.py`
 - provider 配置来自环境变量或 `~/.codexsaver/config.json`
-- `python cli.py doctor` 报告 `CodexSaver is ready`
+- `codexsaver doctor --workspace .` 报告 `CodexSaver is ready`
 
 ---
 
 ## 60 秒体验
 
-`python cli.py install` 生成的全局 MCP 配置大致是：
+`codexsaver install` 生成的全局 MCP 配置大致是：
 
 ```toml
 [mcp_servers.codexsaver]
@@ -184,42 +221,48 @@ tool_timeout_sec = 120
 也可以直接走 CLI：
 
 ```bash
-python cli.py delegate "Explain the routing logic briefly" --files codexsaver/router.py --workspace .
+codexsaver delegate "Explain the routing logic briefly" --files codexsaver/router.py --workspace .
 ```
 
 试运行：
 
 ```bash
-python cli.py "添加单元测试" --files src/user/service.ts --workspace . --dry-run
+codexsaver delegate "添加单元测试" --files src/user/service.ts --workspace . --dry-run
 ```
 
 真实运行：
 
 ```bash
-python cli.py "添加单元测试" --files src/user/service.ts --workspace .
+codexsaver delegate "添加单元测试" --files src/user/service.ts --workspace .
 ```
 
 ---
 
-## 已验证的安装流程
+## 已验证的 v2 安装流程
 
-基于 2026 年 5 月 8 日、全局安装和本地 key 流程的实测结果：
+基于 2026 年 5 月 12 日、editable 安装、全局 launcher 和本地 key 流程的实测结果：
 
 | 检查项 | 命令 | 结果 |
 |---|---|---|
-| 全量测试 | `PYTHONDONTWRITEBYTECODE=1 python -m pytest -q -p no:cacheprovider` | `86 passed in 0.23s` |
-| 全局安装 | `python cli.py install --workspace .` | `status=ok`，全局配置指向 `~/.codexsaver/codexsaver_mcp.py` |
-| 本地 provider 保存 | `python cli.py auth set --provider deepseek --api-key ...` | 已保存到 `~/.codexsaver/config.json` |
-| 工作区诊断 | `python cli.py doctor --workspace .` | `provider_api_key_source=local_config:deepseek`，工作区已就绪 |
-| 全局 launcher 检查 | 用 MCP `initialize` 调用 `~/.codexsaver/codexsaver_mcp.py` | 返回 `serverInfo.name=codexsaver` |
-| 真实 DeepSeek 调用 | `python cli.py delegate "Explain the CodexSaver router..." --files codexsaver/router.py --workspace .` | `route=deepseek`、`status=success`、验证通过 |
+| Editable 安装 | `python -m pip install -e .` | 安装 `codexsaver-0.2.0` |
+| 全量测试 | `PYTHONDONTWRITEBYTECODE=1 python -m pytest -q -p no:cacheprovider` | `97 passed in 0.41s` |
+| 全局安装 | `codexsaver install --workspace .` | 全局配置指向 `~/.codexsaver/codexsaver_mcp.py` |
+| 本地 provider 保存 | `codexsaver auth set --provider deepseek --api-key ...` | 已保存到 `~/.codexsaver/config.json` |
+| 工作区诊断 | `codexsaver doctor --workspace .` | `provider_api_key_source=local_config:deepseek`，工作区已就绪 |
+| 全局 launcher 检查 | 用 MCP `initialize` 调用 `~/.codexsaver/codexsaver_mcp.py` | 返回 `serverInfo.version=0.2.0` |
+| v2 MCP 工具检查 | MCP `tools/list` | 包含 `delegate_work_packet` |
+| v2 preflight 检查 | MCP `tools/call delegate_work_packet` | 返回 `preflight_satisfied=true` |
 
 推荐流程就是：
 
 1. 保存一次 key
-2. 全局安装 CodexSaver
+2. 安装 editable 包和全局 launcher
 3. 用 `doctor` 确认就绪
-4. 之后直接发起真实委派调用，不再重复导出 API key
+4. 如果 Codex 窗口在安装前已经打开，需要停止或重载旧 MCP 进程
+5. 之后直接发起真实委派调用，不再重复导出 API key
+
+如果已经打开的 Codex 窗口仍在使用旧 MCP 进程，请停止或重载那个 MCP server。
+全局 launcher 是 v2 的事实来源，会返回 `serverInfo.version=0.2.0`。
 
 ---
 
@@ -237,7 +280,7 @@ python cli.py "添加单元测试" --files src/user/service.ts --workspace .
 | `ollama` | 本地 OpenAI-compatible endpoint | `llama3.1` | 不需要 |
 | `lmstudio` | 本地 OpenAI-compatible endpoint | `local-model` | 不需要 |
 
-完整列表可以运行 `python cli.py auth providers` 查看。
+完整列表可以运行 `codexsaver auth providers` 查看。
 
 ---
 
@@ -271,12 +314,28 @@ python cli.py "添加单元测试" --files src/user/service.ts --workspace .
 
 ## 五个小任务的 A/B 对比
 
+最新 v2 报告：
+
+- [v2 重启确认，2026-05-12](./docs/benchmarks/v2-restart-confirmation-2026-05-12.md)
+- [v2 基准测试，2026-05-12](./docs/benchmarks/v2-benchmark-2026-05-12.md)
+
+5 月 12 日这轮测试是在停止旧的内存 MCP 进程之后执行的，并且已经确认全局
+launcher 返回 `serverInfo.version=0.2.0`。
+
 方法说明：
 
 - **A** = 反事实的 `Codex-only` 基线，归一化成本指数固定为 `1.00`
 - **B** = `CodexSaver` 模式，真实经过当前路由器和 DeepSeek worker 执行
 - 延迟统计的是 CodexSaver 实时调用的墙钟时间
 - 节省比例来自当前 `CostEstimator` 的估算，所以这是一个可复现的路由基准，不是账单级财务数据
+
+v2 bounded work-packet 总结：
+
+- `5 / 5` 任务成功
+- `4 / 5` 走 DeepSeek worker 路径
+- `1 / 5` 走 v2 preflight，因为任务已经满足
+- 平均归一化成本指数是 `0.44`
+- 平均预计节省是 `56%`
 
 文字总结：
 
@@ -380,12 +439,13 @@ Codex review / apply / finalize
 - `ProviderClient`：调用已配置的 worker 模型
 - `Verifier`：检查返回结构、受保护路径和建议命令
 - `CostEstimator`：估算相对节省区间
+- `WorkPacketRuntime`：在沙箱中 apply worker patch，并运行 allowlisted checks
 
 ---
 
 ## 安全与持久化
 
-- `python cli.py auth set --provider ... --api-key ...` 会把 provider 配置保存到 `~/.codexsaver/config.json`
+- `codexsaver auth set --provider ... --api-key ...` 会把 provider 配置保存到 `~/.codexsaver/config.json`
 - 配置文件会使用仅本地用户可读写的权限
 - `doctor` 会告诉你 key 是来自环境变量还是本地配置，并且只显示脱敏预览
 - 如果没有导出环境变量，真实调用会自动使用本地配置
@@ -396,12 +456,13 @@ Codex review / apply / finalize
 ## 常用命令
 
 ```bash
-python cli.py auth providers
-python cli.py auth set --provider deepseek --api-key YOUR_API_KEY
-python cli.py install
-python cli.py install --project
-python cli.py doctor
-python cli.py delegate "Explain the routing logic briefly" --files codexsaver/router.py --workspace .
+codexsaver auth providers
+codexsaver auth set --provider deepseek --api-key YOUR_API_KEY
+codexsaver install
+codexsaver install --project
+codexsaver doctor --workspace .
+codexsaver delegate "Explain the routing logic briefly" --files codexsaver/router.py --workspace .
+codexsaver work-packet "Create docs/example.md with one sentence." --files README.md --allowed-file docs/example.md --workspace .
 ```
 
 ---
@@ -416,6 +477,8 @@ python cli.py delegate "Explain the routing logic briefly" --files codexsaver/ro
 - [x] 本地 API key 持久化
 - [x] 可感知的交互返回
 - [x] 端到端验证流程
+- [x] v2 bounded work packet 和沙箱 patch 验证
+- [x] v2 已满足任务的 preflight
 - [ ] 成本感知动态路由
 - [ ] 成本感知 provider 选择
 

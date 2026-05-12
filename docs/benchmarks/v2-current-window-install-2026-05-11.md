@@ -26,13 +26,24 @@ Date: 2026-05-11
 
 ## Important Current-Window Note
 
-The already-open Codex MCP process did not hot-reload after installation. A direct
-`codexsaver.delegate_work_packet` call in this window still used the old in-memory
-server and fell back to Codex. The global launcher now points to v2, so a new Codex
-window or MCP server reload will pick up the installed v2 server.
+The already-open Codex MCP process did not hot-reload after installation. It was
+stopped and the global launcher was then started manually through stdio to verify
+the installed server version. The current Codex UI did not automatically reconnect
+the killed transport in this session; a new Codex window or MCP server reload will
+pick up the installed v2 server.
 
 The benchmark below was run through the freshly installed editable CLI, which uses
 the v2 source tree directly.
+
+## V2 Proof
+
+- Old active MCP process stopped: `python ./codexsaver_mcp.py`
+- Global launcher path tested: `/Users/f/.codexsaver/codexsaver_mcp.py`
+- MCP initialize response: `serverInfo.name=codexsaver`, `serverInfo.version=0.2.0`
+- MCP tools/list includes: `delegate_task`, `delegate_work_packet`
+- `delegate_work_packet` description includes: `bounded v2 coding work packet`
+- MCP tools/call preflight result: `preflight_satisfied=true`
+- MCP tools/call verification reason: `Work packet already satisfied before delegation.`
 
 ## Five-Task Benchmark
 
